@@ -3,277 +3,391 @@ import json
 import os
 import re
 
-app = Flask(__name__)
-app.secret_key = "secreto_para_sessao"
-
 # --------------------- Caminho multiplataforma ---------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ARQUIVO_JSON = os.path.join(BASE_DIR, "cadastro.json")
 
-# --------------------- Validação de campos ---------------------
-def valida_campo(campo):
-    if not campo:
-        return None, "Campo vazio."
-    if len(campo) > 50:
-        return None, "Campo muito longo."
-    if not re.match(r"^[A-Za-z\sà-ü]{1,50}$", campo):
-        return None, "Caracteres inválidos."
-    preposicoes = ["da", "de", "do", "das", "dos"]
-    campo_formatado = " ".join([
-        parte.capitalize() if parte not in preposicoes else parte
-        for parte in re.sub(r"\s+", " ", campo).split()
+# --------------------- Validação de campos (função auxiliar) ---------------------
+def validate_field(field):
+    if not field:
+        return None, 
+    if len(field) > 50:
+        return None, 
+    if not re.match(r"^[A-Za-z\sà-üÀ-Ü]{1,50}$", field):
+        return None, 
+
+    prepositions = ["da", "de", "do", "das", "dos"]
+    formatted_field = " ".join([
+        part.capitalize() if part.lower() not in prepositions else part.lower()
+        for part in re.sub(r"\s+", " ", field).strip().split()
     ])
-    return campo_formatado, None
+    return formatted_field, None
 
-# --------------------- JSON ---------------------
-def ler_dados():
-    try:
-        if os.path.exists(ARQUIVO_JSON) and os.path.getsize(ARQUIVO_JSON) > 0:
-            with open(ARQUIVO_JSON, "r", encoding="utf-8") as f:
-                dados = json.load(f)
-                return sorted(dados, key=lambda x: x["nome"].lower())
-    except json.JSONDecodeError:
-        return []
-    return []
+class Contact:
+    def __init__(self, nome, sobrenome, genero):
+        self.nome = nome
+        self.sobrenome = sobrenome
+        self.genero = genero
 
-def salvar_dados(dados):
-    with open(ARQUIVO_JSON, "w", encoding="utf-8") as f:
-        json.dump(dados, f, indent=4, ensure_ascii=False)
+    def to_dict(self):
+        return {
+            "nome": self.nome,
+            "sobrenome": self.sobrenome,
+            "genero": self.genero
+        }
 
-# --------------------- Página principal ---------------------
-@app.route("/", methods=["GET", "POST"])
-def index():
-    dados = ler_dados()
-    mensagem = session.pop("mensagem", "")
-    selecionado = -1
-    nome = ""
-    sobrenome = ""
-    genero = ""
+class ContactManager:
+    def __init__(self, json_file_path):
+        self.json_file_path = json_file_path
+        self._ensure_json_file_exists()
 
-    if request.method == "POST":
-        acao = request.form.get("acao")
-        if acao == "sair":
-            return redirect(url_for("index"))  # JavaScript lida com o fechamento da aba
+    def _ensure_json_file_exists(self):
+        if not os.path.exists(self.json_file_path):
+            with open(self.json_file_path, "w", encoding="utf-8") as f:
+                json.dump([], f)
+        elif os.path.getsize(self.json_file_path) == 0:
+            with open(self.json_file_path, "w", encoding="utf-8") as f:
+                json.dump([], f) 
 
-        nome_input = request.form.get("nome", "").strip()
-        sobrenome_input = request.form.get("sobrenome", "").strip()
-        genero_input = request.form.get("genero", "")
-        index = request.form.get("selecionado", "-1")
-
-        nome, erro1 = valida_campo(nome_input)
-        sobrenome, erro2 = valida_campo(sobrenome_input)
-
+    def _read_data(self):
         try:
-            selecionado = int(index)
-        except:
-            selecionado = -1
+            with open(self.json_file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if not isinstance(data, list):
+                    return []
+                return [Contact(**item) for item in data if isinstance(item, dict)]
+        except (json.JSONDecodeError, FileNotFoundError):
+            return []
 
-        if acao == "inserir":
-            if not erro1 and not erro2 and genero_input in ["Masculino", "Feminino", "Outros"]:
-                dados.append({"nome": nome, "sobrenome": sobrenome, "genero": genero_input})
-                salvar_dados(dados)
-                return redirect(url_for("index"))
-            else:
-                session["mensagem"] = "Preencha todos os campos corretamente para inserir."
-                session["nome"] = nome_input
-                session["sobrenome"] = sobrenome_input
-                session["genero"] = genero_input
-                session["selecionado"] = selecionado
-                return redirect(url_for("index"))
+    def _save_data(self, contacts):
+        data_to_save = [contact.to_dict() for contact in contacts]
+        with open(self.json_file_path, "w", encoding="utf-8") as f:
+            json.dump(data_to_save, f, indent=4, ensure_ascii=False)
 
-        elif acao == "alterar" and 0 <= selecionado < len(dados):
-            if not erro1 and not erro2 and genero_input in ["Masculino", "Feminino", "Outros"]:
-                dados[selecionado] = {"nome": nome, "sobrenome": sobrenome, "genero": genero_input}
-                salvar_dados(dados)
-                return redirect(url_for("index"))
-            else:
-                session["mensagem"] = "Preencha todos os campos corretamente para alterar."
-                session["nome"] = nome_input
-                session["sobrenome"] = sobrenome_input
-                session["genero"] = genero_input
-                session["selecionado"] = selecionado
-                return redirect(url_for("index"))
+    def get_all_contacts(self):
+        contacts = self._read_data()
+        return sorted(contacts, key=lambda x: x.nome.lower())
 
-        elif acao == "excluir" and 0 <= selecionado < len(dados):
-            dados.pop(selecionado)
-            salvar_dados(dados)
-            return redirect(url_for("index"))
+    def add_contact(self, contact):
+        contacts = self._read_data()
+        contacts.append(contact)
+        self._save_data(contacts)
 
-    nome = session.pop("nome", "")
-    sobrenome = session.pop("sobrenome", "")
-    genero = session.pop("genero", "")
-    selecionado = session.pop("selecionado", -1)
+    def update_contact(self, index, new_contact):
+        contacts = self._read_data()
+        if 0 <= index < len(contacts):
+            contacts[index] = new_contact
+            self._save_data(contacts)
+            return True
+        return False
 
-    # --------------------- HTML embutido ---------------------
-    html = f"""
-    <!DOCTYPE html>
-    <html lang="pt-br">
-    <head>
-        <meta charset="UTF-8">
-        <title>Cadastro de Contatos</title>
-        <style>
-            body {{
-                font-family: Arial, sans-serif;
-                background-color: #f2f2f2;
-                padding: 20px;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-            }}
-            form {{
-                background-color: #fff;
-                padding: 20px;
-                border-radius: 8px;
-                width: 95%;
-                max-width: 800px;
-                box-shadow: 0 0 10px rgba(0,0,0,0.1);
-                margin-bottom: 20px;
-            }}
-            label {{
-                font-weight: bold;
-                display: block;
-                margin-top: 10px;
-            }}
-            input[type="text"] {{
-                width: 100%;
-                padding: 8px;
-                margin-top: 4px;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-            }}
-            .radio-group {{
-                margin-top: 10px;
-            }}
-            .radio-group input {{
-                margin-left: 10px;
-                margin-right: 5px;
-            }}
-            .btn {{
-                background-color: #4CAF50;
-                color: white;
-                padding: 10px 15px;
-                margin-top: 15px;
-                margin-right: 10px;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 16px;
-            }}
-            .mensagem {{
-                color: red;
-                font-weight: bold;
-                margin-bottom: 15px;
-            }}
-            .tabela-container {{
-                width: 95%;
-                max-width: 800px;
-                max-height: 300px;
-                overflow-y: auto;
-                border: 1px solid #ccc;
-                border-radius: 8px;
-                background-color: white;
-            }}
-            table {{
-                width: 100%;
-                border-collapse: collapse;
-            }}
-            th, td {{
-                border: 1px solid #aaa;
-                padding: 10px;
-                text-align: left;
-            }}
-            th {{
-                background-color: #ddd;
-                position: sticky;
-                top: 0;
-            }}
-            tr:hover {{
-                background-color: #eef;
-                cursor: pointer;
-            }}
-        </style>
-        <script>
-            function preencherForm(index) {{
-                document.getElementById("nome").value = document.getElementById("nome_" + index).textContent;
-                document.getElementById("sobrenome").value = document.getElementById("sobrenome_" + index).textContent;
-                const genero = document.getElementById("genero_" + index).textContent;
-                const radio = document.getElementById("genero_" + genero);
-                if (radio) radio.checked = true;
-                document.getElementById("selecionado").value = index;
-            }}
+    def delete_contact(self, index):
+        contacts = self._read_data()
+        if 0 <= index < len(contacts):
+            del contacts[index]
+            self._save_data(contacts)
+            return True
+        return False
 
-            function filtrarTabela() {{
-                let filtro = document.getElementById("filtro").value.toLowerCase();
-                let linhas = document.querySelectorAll("#tabelaContatos tr");
-                linhas.forEach((linha, i) => {{
-                    if (i === 0) return;
-                    let nome = linha.cells[0].innerText.toLowerCase();
-                    let sobrenome = linha.cells[1].innerText.toLowerCase();
-                    linha.style.display = nome.includes(filtro) || sobrenome.includes(filtro) ? "" : "none";
-                }});
-            }}
+class ContactApp:
+    def __init__(self, secret_key, json_file_path):
+        self.app = Flask(__name__)
+        self.app.secret_key = secret_key
+        self.contact_manager = ContactManager(json_file_path)
+        self.setup_routes()
 
-            function fecharJanela() {{
-                window.close();
-                setTimeout(() => {{
-                    alert("Se a aba não foi fechada automaticamente, feche-a manualmente.");
-                }}, 300);
-            }}
-        </script>
-    </head>
-    <body>
-        <h2>Cadastro de Contatos</h2>
+    def setup_routes(self):
+        self.app.add_url_rule("/", "index", self.index, methods=["GET", "POST"])
 
-        <form method="POST">
-            <label>Nome:</label>
-            <input type="text" name="nome" id="nome" value="{nome}" required>
+    def _render_html(self, contacts, mensagem, nome_input, sobrenome_input, genero_input, selecionado):
+        html_rows = ""
+        for i, p in enumerate(contacts):
+            html_rows += f"""
+                <tr onclick="preencherForm({i})">
+                    <td id="nome_{i}">{p.nome}</td>
+                    <td id="sobrenome_{i}">{p.sobrenome}</td>
+                    <td id="genero_{i}">{p.genero}</td>
+                </tr>"""
 
-            <label>Sobrenome:</label>
-            <input type="text" name="sobrenome" id="sobrenome" value="{sobrenome}" required>
+        return f"""
+        <!DOCTYPE html>
+        <html lang="pt-br">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Cadastro de Contatos</title>
+            <style>
+                body {{
+                    font-family: 'Inter', sans-serif;
+                    background-color: #f0f4f8;
+                    padding: 20px;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    min-height: 100vh;
+                    margin: 0;
+                }}
+                form, .tabela-container, .search-container {{
+                    background-color: #ffffff;
+                    padding: 25px;
+                    border-radius: 12px;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+                    width: 95%;
+                    max-width: 800px;
+                    margin-bottom: 25px;
+                    border: 1px solid #e0e6ed;
+                }}
+                h2, h3 {{
+                    color: #2c3e50;
+                    margin-bottom: 20px;
+                    font-weight: 600;
+                }}
+                label {{
+                    font-weight: 600;
+                    display: block;
+                    margin-bottom: 8px;
+                    color: #34495e;
+                }}
+                input[type="text"] {{
+                    width: calc(100% - 20px);
+                    padding: 10px;
+                    margin-bottom: 15px;
+                    border: 1px solid #ced4da;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    transition: border-color 0.3s ease;
+                }}
+                input[type="text"]:focus {{
+                    border-color: #4CAF50;
+                    outline: none;
+                }}
+                .radio-group {{
+                    margin-bottom: 20px;
+                    display: flex;
+                    gap: 15px;
+                }}
+                .radio-group input[type="radio"] {{
+                    margin-right: 5px;
+                }}
+                .radio-group label {{
+                    font-weight: normal;
+                    display: inline-block;
+                    margin-right: 5px;
+                    cursor: pointer;
+                }}
+                .btn {{
+                    background-color: #4CAF50;
+                    color: white;
+                    padding: 12px 22px;
+                    margin-top: 15px;
+                    margin-right: 12px;
+                    border: none;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-size: 16px;
+                    font-weight: 500;
+                    transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                }}
+                .btn:hover {{
+                    background-color: #45a049;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+                }}
+                .btn:active {{
+                    transform: translateY(0);
+                    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+                }}
+                .btn-exit {{
+                    background-color: #f44336;
+                }}
+                .btn-exit:hover {{
+                    background-color: #da190b;
+                }}
+                .mensagem {{
+                    color: #d32f2f;
+                    font-weight: bold;
+                    margin-bottom: 20px;
+                    text-align: center;
+                }}
+                .search-container {{
+                    padding: 15px 25px;
+                }}
+                table {{
+                    width: 100%;
+                    border-collapse: collapse;
+                }}
+                th, td {{
+                    border: 1px solid #dee2e6;
+                    padding: 12px;
+                    text-align: left;
+                    font-size: 15px;
+                }}
+                th {{
+                    background-color: #e9ecef;
+                    color: #495057;
+                    position: sticky;
+                    top: 0;
+                    z-index: 1;
+                }}
+                tr:nth-child(even) {{
+                    background-color: #f8f9fa;
+                }}
+                tr:hover {{
+                    background-color: #e2f2e5;
+                    cursor: pointer;
+                }}
+                .tabela-container {{
+                    max-height: 350px;
+                    overflow-y: auto;
+                }}
+            </style>
+            <script>
+                function preencherForm(index) {{
+                    document.getElementById("nome").value = document.getElementById("nome_" + index).textContent;
+                    document.getElementById("sobrenome").value = document.getElementById("sobrenome_" + index).textContent;
+                    const genero = document.getElementById("genero_" + index).textContent;
+                    // Define o radio button de gênero baseado no valor da célula da tabela
+                    const radio = document.getElementById("genero_" + genero);
+                    if (radio) radio.checked = true;
+                    document.getElementById("selecionado").value = index;
+                }}
 
-            <label>Gênero:</label>
-            <div class="radio-group">
-                <input type="radio" name="genero" id="genero_Masculino" value="Masculino" {"checked" if genero == "Masculino" else ""}>Masculino
-                <input type="radio" name="genero" id="genero_Feminino" value="Feminino" {"checked" if genero == "Feminino" else ""}>Feminino
-                <input type="radio" name="genero" id="genero_Outros" value="Outros" {"checked" if genero == "Outros" else ""}>Outros
+                function filtrarTabela() {{
+                    let filtro = document.getElementById("filtro").value.toLowerCase();
+                    let linhas = document.querySelectorAll("#tabelaContatos tbody tr"); // Seleciona apenas as linhas do corpo da tabela
+                    linhas.forEach((linha) => {{
+                        let nome = linha.cells[0].innerText.toLowerCase();
+                        let sobrenome = linha.cells[1].innerText.toLowerCase();
+                        // Mostra ou esconde a linha com base no filtro
+                        linha.style.display = (nome.includes(filtro) || sobrenome.includes(filtro)) ? "" : "none";
+                    }});
+                }}
+
+                // Devido a restrições de segurança do navegador, window.close() só funciona
+                // para janelas abertas pelo próprio script. Neste ambiente, não é garantido.
+                // Recomenda-se que o usuário feche a aba manualmente.
+                function fecharJanela() {{
+                    console.log("Para sair, feche esta aba ou janela do navegador manualmente.");
+                    // window.close(); // Esta linha foi removida pois não funciona de forma confiável
+                    // setTimeout(() => {{ alert(...) }}); // alert() não é permitido neste ambiente.
+                }}
+            </script>
+        </head>
+        <body>
+            <h2>Cadastro de Contatos</h2>
+
+            <form method="POST">
+                <label for="nome">Nome:</label>
+                <input type="text" name="nome" id="nome" value="{nome_input}" required>
+
+                <label for="sobrenome">Sobrenome:</label>
+                <input type="text" name="sobrenome" id="sobrenome" value="{sobrenome_input}" required>
+
+                <label>Gênero:</label>
+                <div class="radio-group">
+                    <input type="radio" name="genero" id="genero_Masculino" value="Masculino" {"checked" if genero_input == "Masculino" else ""}>
+                    <label for="genero_Masculino">Masculino</label>
+                    <input type="radio" name="genero" id="genero_Feminino" value="Feminino" {"checked" if genero_input == "Feminino" else ""}>
+                    <label for="genero_Feminino">Feminino</label>
+                    <input type="radio" name="genero" id="genero_Outros" value="Outros" {"checked" if genero_input == "Outros" else ""}>
+                    <label for="genero_Outros">Outros</label>
+                </div>
+
+                <input type="hidden" name="selecionado" id="selecionado" value="{selecionado}">
+                <div>
+                    <button class="btn" name="acao" value="inserir">Inserir dados</button>
+                    <button class="btn" name="acao" value="alterar">Editar registro</button>
+                    <button class="btn btn-exit" name="acao" value="excluir">Excluir registro</button>
+                    <button type="button" class="btn btn-exit" onclick="fecharJanela()">Sair</button>
+                </div>
+            </form>
+
+            {"<p class='mensagem'>" + mensagem + "</p>" if mensagem else ""}
+
+            <div class="search-container">
+                <label for="filtro">Buscar por nome:</label>
+                <input type="text" id="filtro" onkeyup="filtrarTabela()" placeholder="Digite para buscar...">
             </div>
 
-            <input type="hidden" name="selecionado" id="selecionado" value="{selecionado}">
-            <div>
-                <button class="btn" name="acao" value="inserir">Inserir dados</button>
-                <button class="btn" name="acao" value="alterar">Editar registro</button>
-                <button class="btn" name="acao" value="excluir">Excluir registro</button>
-                <button type="button" class="btn" onclick="fecharJanela()">Sair</button>
+            <h3>Lista de Contatos:</h3>
+            <div class="tabela-container">
+            <table id="tabelaContatos">
+                <thead>
+                    <tr><th>Nome</th><th>Sobrenome</th><th>Gênero</th></tr>
+                </thead>
+                <tbody>
+                    {html_rows}
+                </tbody>
+            </table>
             </div>
-        </form>
+        </body>
+        </html>"""
 
-        <p class="mensagem">{mensagem}</p>
+    def index(self):
+        contacts = self.contact_manager.get_all_contacts()
+        mensagem = session.pop("mensagem", "")
+        selecionado = session.pop("selecionado", -1)
+        nome_input = session.pop("nome", "")
+        sobrenome_input = session.pop("sobrenome", "")
+        genero_input = session.pop("genero", "")
 
-        <div style="width:95%; max-width:800px; margin-bottom:10px;">
-            <label>Buscar por nome:</label>
-            <input type="text" id="filtro" onkeyup="filtrarTabela()" placeholder="Digite para buscar..." style="width:100%; padding:8px;">
-        </div>
+        if request.method == "POST":
+            acao = request.form.get("acao")
+            if acao == "sair":
+                return redirect(url_for("index"))
 
-        <h3>Lista de Contatos:</h3>
-        <div class="tabela-container">
-        <table id="tabelaContatos">
-            <tr><th>Nome</th><th>Sobrenome</th><th>Gênero</th></tr>"""
+            nome_form = request.form.get("nome", "").strip()
+            sobrenome_form = request.form.get("sobrenome", "").strip()
+            genero_form = request.form.get("genero", "")
+            index_str = request.form.get("selecionado", "-1")
+            nome_validado, erro1 = validate_field(nome_form)
+            sobrenome_validado, erro2 = validate_field(sobrenome_form)
 
-    for i, p in enumerate(ler_dados()):
-        html += f"""
-            <tr onclick="preencherForm({i})">
-                <td id="nome_{i}">{p['nome']}</td>
-                <td id="sobrenome_{i}">{p['sobrenome']}</td>
-                <td id="genero_{i}">{p['genero']}</td>
-            </tr>"""
+            try:
+                selecionado = int(index_str)
+            except ValueError:
+                selecionado = -1
 
-    html += """
-        </table>
-        </div>
-    </body>
-    </html>"""
+            if acao == "inserir":
+                if not erro1 and not erro2 and genero_form in ["Masculino", "Feminino", "Outros"]:
+                    new_contact = Contact(nome_validado, sobrenome_validado, genero_form)
+                    self.contact_manager.add_contact(new_contact)
+                    return redirect(url_for("index"))
+                else:
+                    session["mensagem"] = "Preencha todos os campos corretamente para inserir."
+                    session["nome"] = nome_form
+                    session["sobrenome"] = sobrenome_form
+                    session["genero"] = genero_form
+                    session["selecionado"] = selecionado
+                    return redirect(url_for("index"))
 
-    return html
+            elif acao == "alterar":
+                if 0 <= selecionado < len(contacts) and not erro1 and not erro2 and genero_form in ["Masculino", "Feminino", "Outros"]:
+                    updated_contact = Contact(nome_validado, sobrenome_validado, genero_form)
+                    self.contact_manager.update_contact(selecionado, updated_contact)
+                    return redirect(url_for("index"))
+                else:
+                    session["mensagem"] = "Preencha todos os campos corretamente para alterar."
+                    session["nome"] = nome_form
+                    session["sobrenome"] = sobrenome_form
+                    session["genero"] = genero_form
+                    session["selecionado"] = selecionado
+                    return redirect(url_for("index"))
+
+            elif acao == "excluir":
+                if 0 <= selecionado < len(contacts):
+                    self.contact_manager.delete_contact(selecionado)
+                    return redirect(url_for("index"))
+        contacts = self.contact_manager.get_all_contacts()
+        return self._render_html(contacts, mensagem, nome_input, sobrenome_input, genero_input, selecionado)
+
+    def run(self, debug=True):
+        self.app.run(debug=debug)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app_instance = ContactApp(
+        secret_key="secreto_para_sessao",
+        json_file_path=ARQUIVO_JSON 
+    )
+    app_instance.run()
