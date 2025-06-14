@@ -9,6 +9,7 @@ class ContatoManager:
         self.arquivo_json = arquivo_json
 
     def ler_dados(self) -> List[Dict[str, str]]:
+        """Lê os dados do arquivo JSON e retorna uma lista ordenada de contatos."""
         try:
             if os.path.exists(self.arquivo_json) and os.path.getsize(self.arquivo_json) > 0:
                 with open(self.arquivo_json, "r", encoding="utf-8") as f:
@@ -19,12 +20,14 @@ class ContatoManager:
         return []
 
     def salvar_dados(self, dados: List[Dict[str, str]]) -> None:
+        """Salva a lista de contatos no arquivo JSON."""
         with open(self.arquivo_json, "w", encoding="utf-8") as f:
             json.dump(dados, f, indent=4, ensure_ascii=False)
 
 class Validador:
     @staticmethod
     def valida_campo(campo: str) -> Tuple[Optional[str], Optional[str]]:
+        """Valida um campo de nome ou sobrenome."""
         if not campo:
             return None, "Campo vazio."
         if len(campo) > 50:
@@ -45,12 +48,10 @@ class ContatoController:
         self.validador = validador
 
     def processar_formulario(self, request_form: Dict, session_data: Dict) -> Tuple[Dict, str]:
+        """Processa o formulário e retorna os dados atualizados e mensagem de status."""
         dados = self.manager.ler_dados()
         mensagem = ""
         selecionado = -1
-        nome = ""
-        sobrenome = ""
-        genero = ""
 
         acao = request_form.get("acao")
         if acao == "sair":
@@ -111,6 +112,7 @@ class TemplateRenderer:
     def renderizar_template(dados_contatos: List[Dict[str, str]], 
                           form_data: Dict = None, 
                           mensagem: str = "") -> str:
+        """Renderiza o template HTML com os dados fornecidos."""
         nome = form_data.get("nome", "") if form_data else ""
         sobrenome = form_data.get("sobrenome", "") if form_data else ""
         genero = form_data.get("genero", "") if form_data else ""
@@ -202,9 +204,22 @@ class TemplateRenderer:
                     background-color: #eef;
                     cursor: pointer;
                 }}
+                .selected {{
+                    background-color: #ddf;
+                }}
             </style>
             <script>
                 function preencherForm(index) {{
+                    // Remove a classe 'selected' de todas as linhas
+                    document.querySelectorAll('#tabelaContatos tr').forEach(tr => {{
+                        tr.classList.remove('selected');
+                    }});
+                    
+                    // Adiciona a classe 'selected' à linha clicada
+                    const linha = document.querySelector('#tabelaContatos tr:nth-child(' + (index + 2) + ')');
+                    if (linha) linha.classList.add('selected');
+                    
+                    // Preenche o formulário
                     document.getElementById("nome").value = document.getElementById("nome_" + index).textContent;
                     document.getElementById("sobrenome").value = document.getElementById("sobrenome_" + index).textContent;
                     const genero = document.getElementById("genero_" + index).textContent;
@@ -236,50 +251,64 @@ class TemplateRenderer:
             <h2>Cadastro de Contatos</h2>
 
             <form method="POST">
-                <label>Nome:</label>
-                <input type="text" name="nome" id="nome" value="{nome}" required>
+                <label for="nome">Nome:</label>
+                <input type="text" id="nome" name="nome" value="{nome}" required>
 
-                <label>Sobrenome:</label>
-                <input type="text" name="sobrenome" id="sobrenome" value="{sobrenome}" required>
+                <label for="sobrenome">Sobrenome:</label>
+                <input type="text" id="sobrenome" name="sobrenome" value="{sobrenome}" required>
 
                 <label>Gênero:</label>
                 <div class="radio-group">
-                    <input type="radio" name="genero" id="genero_Masculino" value="Masculino" {"checked" if genero == "Masculino" else ""}>Masculino
-                    <input type="radio" name="genero" id="genero_Feminino" value="Feminino" {"checked" if genero == "Feminino" else ""}>Feminino
-                    <input type="radio" name="genero" id="genero_Outros" value="Outros" {"checked" if genero == "Outros" else ""}>Outros
+                    <input type="radio" id="genero_Masculino" name="genero" value="Masculino" {"checked" if genero == "Masculino" else ""}>
+                    <label for="genero_Masculino">Masculino</label>
+                    
+                    <input type="radio" id="genero_Feminino" name="genero" value="Feminino" {"checked" if genero == "Feminino" else ""}>
+                    <label for="genero_Feminino">Feminino</label>
+                    
+                    <input type="radio" id="genero_Outros" name="genero" value="Outros" {"checked" if genero == "Outros" else ""}>
+                    <label for="genero_Outros">Outros</label>
                 </div>
 
                 <input type="hidden" name="selecionado" id="selecionado" value="{selecionado}">
+                
                 <div>
-                    <button class="btn" name="acao" value="inserir">Inserir dados</button>
-                    <button class="btn" name="acao" value="alterar">Editar registro</button>
-                    <button class="btn" name="acao" value="excluir">Excluir registro</button>
+                    <button type="submit" class="btn" name="acao" value="inserir">Inserir dados</button>
+                    <button type="submit" class="btn" name="acao" value="alterar">Editar registro</button>
+                    <button type="submit" class="btn" name="acao" value="excluir">Excluir registro</button>
                     <button type="button" class="btn" onclick="fecharJanela()">Sair</button>
                 </div>
             </form>
 
-            <p class="mensagem">{mensagem}</p>
+            {f'<p class="mensagem">{mensagem}</p>' if mensagem else ''}
 
             <div style="width:95%; max-width:800px; margin-bottom:10px;">
-                <label>Buscar por nome:</label>
+                <label for="filtro">Buscar por nome:</label>
                 <input type="text" id="filtro" onkeyup="filtrarTabela()" placeholder="Digite para buscar..." style="width:100%; padding:8px;">
             </div>
 
             <h3>Lista de Contatos:</h3>
             <div class="tabela-container">
-            <table id="tabelaContatos">
-                <tr><th>Nome</th><th>Sobrenome</th><th>Gênero</th></tr>"""
+                <table id="tabelaContatos">
+                    <thead>
+                        <tr>
+                            <th>Nome</th>
+                            <th>Sobrenome</th>
+                            <th>Gênero</th>
+                        </tr>
+                    </thead>
+                    <tbody>"""
 
         for i, p in enumerate(dados_contatos):
             html += f"""
-                <tr onclick="preencherForm({i})">
-                    <td id="nome_{i}">{p['nome']}</td>
-                    <td id="sobrenome_{i}">{p['sobrenome']}</td>
-                    <td id="genero_{i}">{p['genero']}</td>
-                </tr>"""
+                        <tr onclick="preencherForm({i})" {"class='selected'" if i == selecionado else ""}>
+                            <td id="nome_{i}">{p['nome']}</td>
+                            <td id="sobrenome_{i}">{p['sobrenome']}</td>
+                            <td id="genero_{i}">{p['genero']}</td>
+                        </tr>"""
 
         html += """
-            </table>
+                    </tbody>
+                </table>
             </div>
         </body>
         </html>"""
@@ -287,6 +316,7 @@ class TemplateRenderer:
         return html
 
 def create_app():
+    """Factory function para criar a aplicação Flask."""
     app = Flask(__name__)
     app.secret_key = "secreto_para_sessao"
 
