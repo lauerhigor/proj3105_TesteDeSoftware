@@ -260,13 +260,13 @@ class TemplateRenderer:
                 <label>Gênero:</label>
                 <div class="radio-group">
                     <input type="radio" id="genero_Masculino" name="genero" value="Masculino" {"checked" if genero == "Masculino" else ""}>
-                    <label for="genero_Masculino">Masculino</label>
+                    Masculino
                     
                     <input type="radio" id="genero_Feminino" name="genero" value="Feminino" {"checked" if genero == "Feminino" else ""}>
-                    <label for="genero_Feminino">Feminino</label>
+                    Feminino
                     
                     <input type="radio" id="genero_Outros" name="genero" value="Outros" {"checked" if genero == "Outros" else ""}>
-                    <label for="genero_Outros">Outros</label>
+                    Outros
                 </div>
 
                 <input type="hidden" name="selecionado" id="selecionado" value="{selecionado}">
